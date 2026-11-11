@@ -6,7 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -28,15 +27,20 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.mytictactoe.ui.theme.MyTicTacToeTheme
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.random.Random
 
 enum class Win {
@@ -61,30 +65,23 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun TTTScreen() {
+
     val playerTurn = remember { mutableStateOf(true) }
     val win = remember { mutableStateOf<Win?>(null) }
-
-    // Use mutableStateListOf so Compose detects changes to individual indices
+    //true = player move, false= AI move, null =no move
     val moves = remember {
         mutableStateListOf<Boolean?>(null, null, null, null, null, null, null, null, null)
     }
 
-    // AI turn logic runs whenever playerTurn changes to false and game is not finished
-    LaunchedEffect(playerTurn.value, win.value) {
-        if (!playerTurn.value && win.value == null) {
-            delay(1000)
-
-            // Gather all available indices
-            val emptyIndices = moves.indices.filter { moves[it] == null }
-            if (emptyIndices.isNotEmpty()) {
-                val randomIndex = emptyIndices[Random.nextInt(emptyIndices.size)]
-                moves[randomIndex] = false
-                val currentWin = checkGame(moves)
-                if (currentWin != null) {
-                    win.value = currentWin
-                } else {
-                    playerTurn.value = true
-                }
+    val onTap: (Offset) -> (Unit) = {
+        if (playerTurn.value && win.value == null) {
+            val x = (it.x / 333).toInt().coerceIn(0, 2)
+            val y = (it.y / 333).toInt().coerceIn(0, 2)
+            val positionInMoves = y * 3 + x
+            if (moves[positionInMoves] == null) {
+                moves[positionInMoves] = true
+                playerTurn.value = false
+                win.value = checkGame(moves)
             }
         }
     }
@@ -97,129 +94,163 @@ fun TTTScreen() {
     ) {
         Text("Tic Tac Toe", fontSize = 30.sp, modifier = Modifier.padding(16.dp))
 
-        Header(playerTurn = playerTurn.value)
+        Header(playerTurn.value)
 
-        Spacer(modifier = Modifier.height(30.dp))
+        Spacer(modifier = Modifier.height(40.dp))
 
-        Board(
-            moves = moves,
-            onCellClick = { position ->
-                if (playerTurn.value && moves[position] == null && win.value == null) {
-                    moves[position] = true
-                    val currentWin = checkGame(moves)
-                    if (currentWin != null) {
-                        win.value = currentWin
-                    } else {
-                        playerTurn.value = false
+        Board(moves = moves, onTap)
+//AI Move
+        if (!playerTurn.value && win.value == null) {
+            CircularProgressIndicator(color = Color.Red, modifier = Modifier.padding(16.dp))
+
+            val coroutineScope = rememberCoroutineScope()
+            LaunchedEffect(playerTurn.value) {
+                coroutineScope.launch {
+                    delay(1500)
+                    while (true) {
+                        val i = Random.nextInt(9)
+                        if (moves[i] == null) {
+                            moves[i] = false
+                            playerTurn.value = true
+                            win.value = checkGame(moves)
+                            break
+                        }
                     }
                 }
             }
-        )
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        if (!playerTurn.value && win.value == null) {
-            CircularProgressIndicator(color = Color.Red, modifier = Modifier.padding(16.dp))
         }
-
         if (win.value != null) {
-            val winText = when (win.value) {
-                Win.PLAYER -> "Player has won \uD83C\uDF89"
-                Win.AI -> "AI has won \uD83D\uDE24"
-                Win.DRAW -> "It's a draw \uD83D\uDE33"
-                null -> ""
-            }
+            when (win.value) {
+                Win.PLAYER -> {
+                    Text(
+                        text = "Player has won \uD83C\uDF89",
+                        fontSize = 25.sp
+                    )
+                }
 
-            Text(
-                text = winText,
-                fontSize = 24.sp,
-                modifier = Modifier.padding(12.dp)
-            )
+                Win.AI -> {
+                    Text(
+                        text = "AI has won \uD83D\uDE24",
+                        fontSize = 25.sp
+                    )
+                }
 
-            Button(onClick = {
-                for (i in 0..8) moves[i] = null
-                win.value = null
-                playerTurn.value = true
-            }) {
-                Text("Play Again")
+                Win.DRAW -> {
+                    Text(
+                        text = "It's a draw \uD83D\uDE33",
+                        fontSize = 25.sp
+                    )
+                }
+
+                null -> {}
             }
         }
     }
+
+
 }
 
 @Composable
-fun Header(playerTurn: Boolean) {
+fun Header(
+    playerTurn: Boolean,
+    onPlayerClick: () -> Unit = {},
+    onAiClick: () -> Unit = {}
+) {
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceAround
     ) {
+
         val playerBoxColor = if (playerTurn) Color.Blue else Color.LightGray
-        val aiBoxColor = if (!playerTurn) Color.Red else Color.LightGray
+        val aiBoxColor = if (playerTurn) Color.LightGray else Color.Red
 
         Box(
             modifier = Modifier
                 .width(100.dp)
                 .background(playerBoxColor)
-                .padding(8.dp),
-            contentAlignment = Alignment.Center
         ) {
-            Text(text = "Player", color = Color.White)
+            Text(
+                text = "Player", modifier = Modifier
+                    .padding(8.dp)
+                    .align(Alignment.Center)
+            )
         }
-
-        Spacer(modifier = Modifier.width(40.dp))
+        Spacer(modifier = Modifier.width(50.dp))
 
         Box(
             modifier = Modifier
                 .width(100.dp)
                 .background(aiBoxColor)
-                .padding(8.dp),
-            contentAlignment = Alignment.Center
         ) {
-            Text(text = "AI", color = Color.White)
+            Text(
+                text = "AI", modifier = Modifier
+                    .padding(8.dp)
+                    .align(Alignment.Center)
+            )
         }
     }
 }
 
 @Composable
-fun Board(moves: List<Boolean?>, onCellClick: (Int) -> Unit) {
+fun Board(moves: List<Boolean?>, onTap: (Offset) -> Unit) {
+
     Box(
         modifier = Modifier
             .aspectRatio(1f)
-            .padding(24.dp)
+            .padding(32.dp)
             .background(Color.LightGray)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = onTap
+                )
+            }
     ) {
-        // Horizontal lines
+
         Column(
             verticalArrangement = Arrangement.SpaceEvenly,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(1f)
         ) {
-            Row(modifier = Modifier.height(2.dp).fillMaxWidth().background(Color.Black)) {}
-            Row(modifier = Modifier.height(2.dp).fillMaxWidth().background(Color.Black)) {}
+            Row(
+                modifier = Modifier
+                    .height(2.dp)
+                    .fillMaxWidth(1f)
+                    .background(Color.Black)
+            ) {}
+
+            Row(
+                modifier = Modifier
+                    .height(2.dp)
+                    .fillMaxWidth(1f)
+                    .background(Color.Black)
+            ) {}
         }
 
-        // Vertical lines
         Row(
             horizontalArrangement = Arrangement.SpaceEvenly,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(1f)
         ) {
-            Column(modifier = Modifier.width(2.dp).fillMaxHeight().background(Color.Black)) {}
-            Column(modifier = Modifier.width(2.dp).fillMaxHeight().background(Color.Black)) {}
+            Column(
+                modifier = Modifier
+                    .width(2.dp)
+                    .fillMaxHeight(1f)
+                    .background(Color.Black)
+            ) {}
+
+            Column(
+                modifier = Modifier
+                    .width(2.dp)
+                    .fillMaxHeight(1f)
+                    .background(Color.Black)
+            ) {}
         }
 
-        // 3x3 Grid of clickable cells
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize(1f)) {
             for (i in 0..2) {
                 Row(modifier = Modifier.weight(1f)) {
                     for (j in 0..2) {
-                        val index = i * 3 + j
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .clickable { onCellClick(index) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            getComposableFromMove(moves[index])
+                        Column(modifier = Modifier.weight(1f)) {
+                            getComposebleFromMove(moves[i * 3 + j])
                         }
                     }
                 }
@@ -229,37 +260,78 @@ fun Board(moves: List<Boolean?>, onCellClick: (Int) -> Unit) {
 }
 
 @Composable
-fun getComposableFromMove(move: Boolean?) {
+fun getComposebleFromMove(move: Boolean?) {
     when (move) {
         true -> Image(
             painter = painterResource(id = R.drawable.ic_x),
-            contentDescription = "X",
-            modifier = Modifier.fillMaxSize(0.8f),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
             colorFilter = ColorFilter.tint(Color.Blue)
         )
+
         false -> Image(
             painter = painterResource(id = R.drawable.ic_o),
-            contentDescription = "O",
-            modifier = Modifier.fillMaxSize(0.8f),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
             colorFilter = ColorFilter.tint(Color.Red)
         )
-        null -> {}
+
+        null -> Image(
+            painter = painterResource(id = R.drawable.ic_null),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 
 fun checkGame(m: List<Boolean?>): Win? {
-    val winningCombinations = listOf(
-        listOf(0, 1, 2), listOf(3, 4, 5), listOf(6, 7, 8), // Rows
-        listOf(0, 3, 6), listOf(1, 4, 7), listOf(2, 5, 8), // Columns
-        listOf(0, 4, 8), listOf(2, 4, 6)             // Diagonals
-    )
 
-    for (combo in winningCombinations) {
-        val (a, b, c) = combo
-        if (m[a] != null && m[a] == m[b] && m[b] == m[c]) {
-            return if (m[a] == true) Win.PLAYER else Win.AI
-        }
+    var win: Win? = null
+    if (
+        (m[0] == true && m[1] == true && m[2] == true) ||
+        (m[3] == true && m[4] == true && m[5] == true) ||
+        (m[6] == true && m[7] == true && m[8] == true)
+        || (m[0] == true && m[3] == true && m[6] == true)
+        || (m[1] == true && m[4] == true && m[7] == true)
+        || (m[2] == true && m[5] == true && m[8] == true)
+        || (m[0] == true && m[4] == true && m[8] == true)
+        || (m[2] == true && m[4] == true && m[6] == true)
+    ) {
+        win = Win.PLAYER
     }
 
-    return if (m.all { it != null }) Win.DRAW else null
+    if (
+        (m[0] == false && m[1] == false && m[2] == false) ||
+        (m[3] == false && m[4] == false && m[5] == false) ||
+        (m[6] == false && m[7] == false && m[8] == false)
+        || (m[0] == false && m[3] == false && m[6] == false)
+        || (m[1] == false && m[4] == false && m[7] == false)
+        || (m[2] == false && m[5] == false && m[8] == false)
+        || (m[0] == false && m[4] == false && m[8] == false)
+        || (m[2] == false && m[4] == false && m[6] == false)
+    ) {
+        win = Win.AI
+    }
+
+    if (win == null) {
+        var available = false
+        for (i in 0..8) {
+            if (m[i] == null) {
+                available = true
+                break
+            }
+        }
+        if (!available) {
+            win = Win.DRAW
+        }
+    }
+    return win
+}
+
+@Preview(showBackground = true)
+@Composable
+fun GreetingPreview() {
+    MyTicTacToeTheme {
+        // Greeting("Android")
+    }
 }
