@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -143,6 +144,15 @@ fun TTTScreen() {
                 }
 
                 null -> {}
+            }
+            Button(onClick = {
+                playerTurn.value = true
+                win.value = null
+                for (i in 0..8) {
+                    moves[i] = null
+                }
+            }) {
+                Text(text = "Click to start over")
             }
         }
     }
